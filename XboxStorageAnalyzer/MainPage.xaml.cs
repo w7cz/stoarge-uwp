@@ -106,7 +106,7 @@ namespace XboxStorageAnalyzer
                     i += (uint)page.Count;
                     foreach (var it in page)
                     {
-                        string hid = it.Attributes.HasFlag(FileAttributes.Hidden) ? " [Hidden]" : "";
+                        string hid = await IsHiddenAsync(it) ? " [Hidden]" : "";
                         if (it is StorageFolder sf) { dirs++; bool k = ScanEngine.TryFolderSize(sf.Path, out long sz); list.Add(new Row { Name = sf.Name + hid, Kind = "Folder", Item = sf, Size = k ? sz : -1, SizeText = k ? Fmt.Bytes(sz) : "not scanned", Modified = sf.DateCreated }); }
                         else if (it is StorageFile fl) { files++; long sz = -1; DateTimeOffset m = fl.DateCreated; try { var bp = await fl.GetBasicPropertiesAsync(); sz = (long)bp.Size; m = bp.DateModified; } catch { }
                             list.Add(new Row { Name = fl.Name + hid, Kind = "File", Item = fl, Size = sz, SizeText = sz >= 0 ? Fmt.Bytes(sz) : "Unavailable", Modified = m }); }
@@ -117,6 +117,20 @@ namespace XboxStorageAnalyzer
             catch (UnauthorizedAccessException) { Status.Text = "Access Denied: " + f.Path; }
             catch (Exception ex) { Status.Text = "Unavailable: " + ex.Message; }
             rows = list; Resort();
+        }
+        // Windows.Storage.FileAttributes has no Hidden flag; read the Win32 attribute through the shell property instead.
+        static async Task<bool> IsHiddenAsync(IStorageItem it)
+        {
+            try
+            {
+                var props = it as IStorageItemProperties;
+                if (props == null) return false;
+                var d = await props.Properties.RetrievePropertiesAsync(new[] { "System.FileAttributes" });
+                object o;
+                if (d.TryGetValue("System.FileAttributes", out o) && o is uint) return (((uint)o) & 0x2) != 0;
+            }
+            catch (Exception) { }
+            return false;
         }
         void Resort()
         {

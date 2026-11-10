@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Windows.Storage;
 namespace XboxStorageAnalyzer
@@ -10,11 +11,14 @@ namespace XboxStorageAnalyzer
             try
             {
                 var d = await f.Properties.RetrievePropertiesAsync(new[] { "System.Capacity", "System.FreeSpace" });
-                ulong? c = d.TryGetValue("System.Capacity", out var co) && co is ulong cu ? cu : (ulong?)null;
-                ulong? fr = d.TryGetValue("System.FreeSpace", out var fo) && fo is ulong fu ? fu : (ulong?)null;
+                object co, fo;
+                d.TryGetValue("System.Capacity", out co);
+                d.TryGetValue("System.FreeSpace", out fo);
+                ulong? c = co is ulong ? (ulong)co : (ulong?)null;
+                ulong? fr = fo is ulong ? (ulong)fo : (ulong?)null;
                 return (c, fr);
             }
-            catch { return (null, null); }
+            catch (Exception) { return (null, null); }
         }
     }
 }
