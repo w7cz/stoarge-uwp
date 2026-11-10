@@ -1,0 +1,40 @@
+# Put at .github/workflows/build.yaml. Builds a signed (test cert) x64 sideload package for Xbox Dev Mode.
+name: Build UWP
+on:
+  push:
+    paths: ['XboxStorageAnalyzer/**', '.github/workflows/build.yaml']
+  workflow_run:
+    workflows: ['Unzip project']
+    types: [completed]
+  workflow_dispatch:
+jobs:
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-2022
+    env:
+      PROJ: XboxStorageAnalyzer/XboxStorageAnalyzer.csproj
+      PFX_PASS: ci-test-cert
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Create throw-away test certificate (Publisher must match manifest)
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=XboxStorageAnalyzer" -KeyUsage DigitalSignature -FriendlyName "XboxStorageAnalyzer CI" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3","2.5.29.19={text}")
+          $pw = ConvertTo-SecureString $env:PFX_PASS -AsPlainText -Force
+          Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\xsa.pfx" -Password $pw
+          Export-Certificate -Cert $cert -FilePath "$env:GITHUB_WORKSPACE\XboxStorageAnalyzer.cer"
+      - name: Restore
+        run: msbuild $env:PROJ /t:Restore /p:Configuration=Release /p:Platform=x64
+      - name: Build package
+        run: >
+          msbuild $env:PROJ /p:Configuration=Release /p:Platform=x64
+          /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:GenerateAppxPackageOnBuild=true
+          /p:AppxPackageSigningEnabled=true /p:PackageCertificateKeyFile="$env:RUNNER_TEMP\xsa.pfx" /p:PackageCertificatePassword=$env:PFX_PASS
+          /p:AppxPackageDir="$env:GITHUB_WORKSPACE\AppPackages\"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XboxStorageAnalyzer-x64
+          path: |
+            AppPackages/**
+            XboxStorageAnalyzer.cer
